@@ -1,0 +1,7 @@
+package com.gilt.nozzle.core
+
+trait ValidationException extends Exception
+
+case class AuthorizationFailedException(message: String, cause: Throwable) extends ValidationException
+
+case class AccessForbiddenException(message: String, cause: Throwable) extends ValidationException
