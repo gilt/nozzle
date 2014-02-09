@@ -22,9 +22,8 @@ object Build extends Build {
   lazy val core = Project("nozzle-core", file("nozzle-core"))
     .settings(nozzleSettings: _*)
     .settings(libraryDependencies ++=
-      compile(akkaActor, sprayCan, sprayRouting, sprayClient) ++
-      test(specs2) ++
-      provided(akkaSlf4j, logback)
+      compile(akkaActor, sprayCan, sprayRouting, sprayClient, akkaSlf4j, logback) ++
+      test(specs2)
     )
 
   // -------------------------------------------------------------------------------------------------------------------

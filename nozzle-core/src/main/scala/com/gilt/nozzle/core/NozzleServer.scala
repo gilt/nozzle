@@ -81,13 +81,16 @@ class RequestReceiver(
       extractTargetInfo(request) pipeTo validatorActor
     }
 
-    case ValidationMessage(request, devInfo, targetInfo, replyTo) => {
+    case ValidationMessage(request, devInfo, targetInfo, replyTo) => try {
       forwardRequest(enrichRequest(request, devInfo, targetInfo)).onComplete {
         case Success(response) =>
           replyTo ! enrichResponse(request, response, devInfo, targetInfo)
         case Failure(e) =>
           replyTo ! errorHandler(e, request, devInfo, targetInfo)
       }
+    } catch {
+      case e: Exception => log.warning(e.getLocalizedMessage)
+      replyTo ! HttpResponse(500)
     }
     case a =>
       log.warning(a.toString)
@@ -113,22 +116,38 @@ class PolicyValidatorActor(
   var targetInfo: Option[TargetInfo] = None
   def receive = {
     case d: DevInfo =>
-      devInfo = Some(d)
-      processMessageArrival()
+      processMessageArrival(d)
     case t: TargetInfo =>
-      targetInfo = Some(t)
-      processMessageArrival()
+      processMessageArrival(t)
+    case Some(a) =>
+      processMessageArrival(a)
+    case None =>
+      replyTo ! HttpResponse(404)
+      self ! PoisonPill
+    case any =>
+      //This should never happen
+      log.warning(s"Unknown message ${any}")
+      replyTo ! HttpResponse(500)
+
   }
 
-  private def processMessageArrival() = {
+  private def processMessageArrival(a: Any) = {
+    a match {
+      case t: TargetInfo => targetInfo = Some(t)
+      case d: DevInfo => devInfo = Some(d)
+      case o =>
+        log.warning("Unable to process message {}", o)
+        self ! PoisonPill
+        replyTo ! HttpResponse(500)
+    }
     if( targetInfo.isDefined && devInfo.isDefined) {
+      self ! PoisonPill
       validatePolicy(request, devInfo.get, targetInfo.get) match {
         case Success(_) =>
           sender ! ValidationMessage(request, devInfo.get, targetInfo.get, replyTo)
         case Failure(e) =>
           replyTo ! errorHandler(e, request, devInfo.get, targetInfo.get)
       }
-      self ! PoisonPill
     }
   }
 }

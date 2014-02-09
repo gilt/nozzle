@@ -15,6 +15,7 @@ object BasicNozzle extends NozzleServer {
 
   override def extractDevInfo = (r: HttpRequest) => future { info }
   override def extractTargetInfo = (request: HttpRequest) => future {
-    TargetInfo(request.uri.copy(authority = forwardAuthority), Seq.empty[String]) }
+    Some(TargetInfo(request.uri.copy(authority = forwardAuthority), Seq.empty[String]))
+  }
   override def policyValidator = (r: HttpRequest, d: DevInfo, t: TargetInfo) => Success({})
 }
