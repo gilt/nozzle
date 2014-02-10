@@ -16,7 +16,7 @@ object Build extends Build {
   // -------------------------------------------------------------------------------------------------------------------
 
   lazy val root = Project("root",file("."))
-    .aggregate(core)
+    .aggregate(core, modules, examples)
     .settings(basicSettings: _*)
 
   lazy val core = Project("nozzle-core", file("nozzle-core"))
@@ -42,5 +42,5 @@ object Build extends Build {
 
   lazy val examples = Project("nozzle-examples", file("nozzle-examples"))
     .settings(nozzleSettings: _*)
-    .dependsOn(core)
+    .dependsOn(core, mongoDevInfo)
 }

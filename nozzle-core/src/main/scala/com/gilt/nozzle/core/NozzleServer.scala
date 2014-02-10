@@ -17,9 +17,10 @@ import PolicyValidator._
 import akka.event.LoggingAdapter
 import spray.http.Uri.Path
 import akka.event.Logging.LogLevel
+import java.util.concurrent.TimeUnit
 
 trait NozzleServer extends App {
-
+  import defaults.config
   import DefaultHandlers._
 
   implicit val timeout: Timeout = 5 seconds
@@ -39,7 +40,11 @@ trait NozzleServer extends App {
 
   val httpServer = system.actorOf(props, "nozzle-server")
   // create a new HttpServer using our handler and tell it where to bind to
-  IO(Http) ! Http.Bind(httpServer, interface = "0.0.0.0", port = 9080)
+  IO(Http) ! Http.Bind(
+                httpServer,
+                interface = config.getString("service.interface"),
+                port = config.getInt("service.port")
+             )
 }
 
 object DefaultHandlers {
@@ -114,6 +119,10 @@ class PolicyValidatorActor(
 
   var devInfo: Option[DevInfo] = None
   var targetInfo: Option[TargetInfo] = None
+
+  //Shutdown after 10 seconds
+  context.system.scheduler.scheduleOnce(10 seconds) { self ! PoisonPill }
+
   def receive = {
     case d: DevInfo =>
       processMessageArrival(d)
@@ -123,7 +132,6 @@ class PolicyValidatorActor(
       processMessageArrival(a)
     case None =>
       replyTo ! HttpResponse(404)
-      self ! PoisonPill
     case any =>
       //This should never happen
       log.warning(s"Unknown message ${any}")
@@ -137,11 +145,9 @@ class PolicyValidatorActor(
       case d: DevInfo => devInfo = Some(d)
       case o =>
         log.warning("Unable to process message {}", o)
-        self ! PoisonPill
         replyTo ! HttpResponse(500)
     }
     if( targetInfo.isDefined && devInfo.isDefined) {
-      self ! PoisonPill
       validatePolicy(request, devInfo.get, targetInfo.get) match {
         case Success(_) =>
           sender ! ValidationMessage(request, devInfo.get, targetInfo.get, replyTo)

@@ -11,8 +11,9 @@ import reactivemongo.bson.{BSONDocumentReader, BSONDocument}
 import com.gilt.nozzle.core.{DevInfo, DevKeyExtractor}
 import com.gilt.nozzle.core.DevInfo.DevInfoExtractor
 import com.gilt.nozzle.core.defaults.config
+import spray.http.HttpRequest
 
-class MongoDevInfo(keyExtractor: DevKeyExtractor) {
+object MongoDevInfo {
 
   private lazy val mongoConfigRoot = config.getConfig("modules.dev-info.mongo")
   private lazy val servers = mongoConfigRoot.getStringList("servers")
@@ -26,7 +27,7 @@ class MongoDevInfo(keyExtractor: DevKeyExtractor) {
 
   implicit val devInfoConverter = DevInfoBSONConverter
 
-  def extractDevInfo: DevInfoExtractor = { request =>
+  def mongoExtractDevInfo(keyExtractor: DevKeyExtractor)(request:HttpRequest) = {
     keyExtractor(request) match {
       case None => future { None }
       case Some(key) =>
@@ -42,6 +43,6 @@ object DevInfoBSONConverter extends BSONDocumentReader[DevInfo] {
     bson.getAs[String]("devId").getOrElse{ throw new IllegalArgumentException("No devId field found")},
     bson.getAs[List[String]]("roles").getOrElse(Seq.empty[String]),
     bson.getAs[String]("name"),
-    bson.getAs[String]("f")
+    bson.getAs[String]("email")
   )
 }

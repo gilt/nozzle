@@ -13,7 +13,7 @@ object BasicNozzle extends NozzleServer {
   val forwardAuthority = Authority(host = Host("www.google.com"), port = 80)
   val info: DevInfo = DevInfo("me")
 
-  override def extractDevInfo = (r: HttpRequest) => future { info }
+  override def extractDevInfo = (r: HttpRequest) => future { Some(info) }
   override def extractTargetInfo = (request: HttpRequest) => future {
     Some(TargetInfo(request.uri.copy(authority = forwardAuthority), Seq.empty[String]))
   }
