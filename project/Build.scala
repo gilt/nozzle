@@ -26,6 +26,16 @@ object Build extends Build {
       test(specs2)
     )
 
+
+  lazy val modules = Project("modules", file("modules"))
+    .aggregate(mongoDevInfo)
+
+  lazy val mongoDevInfo = Project("nozzle-mongo-devinfo", file("modules/mongo-devinfo"))
+    .settings(nozzleSettings: _*)
+    .settings(libraryDependencies ++=
+      compile(reactiveMongo)
+  ).dependsOn(core)
+
   // -------------------------------------------------------------------------------------------------------------------
   // Example Projects
   // -------------------------------------------------------------------------------------------------------------------

@@ -7,5 +7,5 @@ case class DevInfo(id: String, roles: Iterable[Role], name: Option[String], emai
 
 object DevInfo {
   def apply(s: String): DevInfo = DevInfo(s, Seq.empty[Role], None, None)
-  type DevInfoExtractor = HttpRequest => Future[DevInfo]
+  type DevInfoExtractor = HttpRequest => Future[Option[DevInfo]]
 }

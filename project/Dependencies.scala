@@ -41,5 +41,6 @@ object Dependencies {
   val logback       = "ch.qos.logback"                          %   "logback-classic"             % "1.0.9"
   val mimepull      = "org.jvnet.mimepull"                      %   "mimepull"                    % "1.9.1"
   val pegdown       = "org.pegdown"                             %   "pegdown"                     % "1.2.1"
-  val liftJson      = "net.liftweb"                             %%  "lift-json" 
+  val liftJson      = "net.liftweb"                             %%  "lift-json"
+  val reactiveMongo = "org.reactivemongo"                       %% "reactivemongo"                % "0.10.0"
 }
