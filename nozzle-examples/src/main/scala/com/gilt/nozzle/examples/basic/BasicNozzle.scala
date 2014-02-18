@@ -1,6 +1,6 @@
 package com.gilt.nozzle.examples.basic
 
-import com.gilt.nozzle.core.{DevInfo, TargetInfo, NozzleServer}
+import com.gilt.nozzle.core.{DefaultTargetInfo, DevInfo, TargetInfo, NozzleServer}
 import scala.util.Success
 import spray.http.HttpRequest
 import scala.concurrent.{ExecutionContext, future}
@@ -13,9 +13,9 @@ object BasicNozzle extends NozzleServer {
   val forwardAuthority = Authority(host = Host("www.google.com"), port = 80)
   val info: DevInfo = DevInfo("me")
 
-  override def extractDevInfo = (r: HttpRequest) => future { Some(info) }
+  override def extractDevInfo = (r: HttpRequest) => future { info }
   override def extractTargetInfo = (request: HttpRequest) => future {
-    Some(TargetInfo(request.uri.copy(authority = forwardAuthority), Seq.empty[String]))
+    Some(DefaultTargetInfo(request.uri.copy(authority = forwardAuthority), Seq.empty[String]))
   }
   override def policyValidator = (r: HttpRequest, d: DevInfo, t: TargetInfo) => Success({})
 }

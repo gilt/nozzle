@@ -30,8 +30,8 @@ trait NozzleServer extends App {
   def extractDevInfo: DevInfoExtractor
   def extractTargetInfo: TargetInfoExtractor
   def policyValidator: ValidatePolicy
-  def enrichRequest: RequestEnricher = noopRequestEnricher(system.log)
-  def enrichResponse: ResponseEnricher = noopResponseEnricher(system.log)
+  def enrichRequest: RequestTransformer = noopRequestEnricher(system.log)
+  def enrichResponse: ResponseTransformer = noopResponseEnricher(system.log)
   def errorHandler: ValidationFailureHandler = defaultErrorHandler
   def forwardRequest: ForwardRequest = sendReceive
 
@@ -66,8 +66,8 @@ class RequestReceiver(
              devInfoExtractor: DevInfoExtractor,
              extractTargetInfo: TargetInfoExtractor,
              policyValidator: ValidatePolicy,
-             enrichRequest: RequestEnricher,
-             enrichResponse: ResponseEnricher,
+             enrichRequest: RequestTransformer,
+             enrichResponse: ResponseTransformer,
              errorHandler: ValidationFailureHandler,
              forwardRequest: ForwardRequest
   ) extends Actor with ActorLogging {
@@ -78,24 +78,13 @@ class RequestReceiver(
 
     case request: HttpRequest => {
       val validatorActor = context.actorOf(Props(
-              classOf[PolicyValidatorActor], request, policyValidator, errorHandler, sender))
+              classOf[PolicyValidatorActor], request, policyValidator, errorHandler,
+                enrichRequest, enrichResponse, forwardRequest, sender))
 
       // Process getting developer and target info from the request in parallel
       // and process them in the validatorActor
       devInfoExtractor(request) pipeTo validatorActor
       extractTargetInfo(request) pipeTo validatorActor
-    }
-
-    case ValidationMessage(request, devInfo, targetInfo, replyTo) => try {
-      forwardRequest(enrichRequest(request, devInfo, targetInfo)).onComplete {
-        case Success(response) =>
-          replyTo ! enrichResponse(request, response, devInfo, targetInfo)
-        case Failure(e) =>
-          replyTo ! errorHandler(e, request, devInfo, targetInfo)
-      }
-    } catch {
-      case e: Exception => log.warning(e.getLocalizedMessage)
-      replyTo ! HttpResponse(500)
     }
     case a =>
       log.warning(a.toString)
@@ -114,6 +103,9 @@ class PolicyValidatorActor(
                             request: HttpRequest,
                             validatePolicy: ValidatePolicy,
                             errorHandler: ValidationFailureHandler,
+                            enrichRequest: RequestTransformer,
+                            enrichResponse: ResponseTransformer,
+                            forwardRequest: ForwardRequest,
                             replyTo: ActorRef
                            ) extends Actor with ActorLogging {
 
@@ -150,10 +142,35 @@ class PolicyValidatorActor(
     if( targetInfo.isDefined && devInfo.isDefined) {
       validatePolicy(request, devInfo.get, targetInfo.get) match {
         case Success(_) =>
-          sender ! ValidationMessage(request, devInfo.get, targetInfo.get, replyTo)
+          val receiverProps = Props(classOf[ValidationReceiverActor],
+                                enrichRequest, enrichResponse, forwardRequest, errorHandler)
+          val receiver = context.actorOf(receiverProps)
+          receiver ! ValidationMessage(request, devInfo.get, targetInfo.get, replyTo)
         case Failure(e) =>
           replyTo ! errorHandler(e, request, devInfo.get, targetInfo.get)
       }
+    }
+  }
+}
+
+class ValidationReceiverActor(
+                               enrichRequest: RequestTransformer,
+                               enrichResponse: ResponseTransformer,
+                               forwardRequest: ForwardRequest,
+                               errorHandler: ValidationFailureHandler
+                               ) extends Actor with ActorLogging {
+  def receive = {
+    case ValidationMessage(request, devInfo, targetInfo, replyTo) => try {
+      self ! PoisonPill
+      forwardRequest(enrichRequest(request, devInfo, targetInfo)).onComplete {
+        case Success(response) =>
+          replyTo ! enrichResponse(request, response, devInfo, targetInfo)
+        case Failure(e) =>
+          replyTo ! errorHandler(e, request, devInfo, targetInfo)
+      }
+    } catch {
+      case e: Exception => log.warning(e.getLocalizedMessage)
+        replyTo ! HttpResponse(500)
     }
   }
 }

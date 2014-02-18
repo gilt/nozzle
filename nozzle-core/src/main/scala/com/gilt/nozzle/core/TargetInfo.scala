@@ -4,7 +4,12 @@ import spray.http.{Uri, HttpRequest}
 import scala.concurrent.Future
 
 
-case class TargetInfo(uri: Uri, roles: Iterable[Role])
+trait TargetInfo {
+  val uri: Uri
+  val roles: Iterable[Role]
+}
+
+case class DefaultTargetInfo(uri: Uri, roles: Iterable[Role]) extends TargetInfo
 
 object TargetInfo {
   type TargetInfoExtractor = (HttpRequest) => Future[Option[TargetInfo]]

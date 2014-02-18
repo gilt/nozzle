@@ -8,7 +8,7 @@ import reactivemongo.api._
 import reactivemongo.api.collections.default.BSONCollection
 import reactivemongo.bson.{BSONDocumentReader, BSONDocument}
 
-import com.gilt.nozzle.core.{DevInfo, DevKeyExtractor}
+import com.gilt.nozzle.core.{DefaultDevInfo, DevInfo, DevKeyExtractor}
 import com.gilt.nozzle.core.DevInfo.DevInfoExtractor
 import com.gilt.nozzle.core.defaults.config
 import spray.http.HttpRequest
@@ -29,17 +29,19 @@ object MongoDevInfo {
 
   def mongoExtractDevInfo(keyExtractor: DevKeyExtractor)(request:HttpRequest) = {
     keyExtractor(request) match {
-      case None => future { None }
+      case None => future { DevInfo.Anonymous }
       case Some(key) =>
         val query = BSONDocument("key" -> key)
-        mongoCollection.find(query).cursor[DevInfo].collect[List](1).map(_.headOption)
+        mongoCollection.find(query).cursor[DevInfo].collect[List](1).map {
+          l => l.headOption.getOrElse(DevInfo.Anonymous)
+        }
     }
   }
 
 }
 
 object DevInfoBSONConverter extends BSONDocumentReader[DevInfo] {
-  def read(bson: BSONDocument): DevInfo = new DevInfo(
+  def read(bson: BSONDocument): DevInfo = DefaultDevInfo(
     bson.getAs[String]("devId").getOrElse{ throw new IllegalArgumentException("No devId field found")},
     bson.getAs[List[String]]("roles").getOrElse(Seq.empty[String]),
     bson.getAs[String]("name"),

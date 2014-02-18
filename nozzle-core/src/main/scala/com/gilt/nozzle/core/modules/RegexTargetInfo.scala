@@ -2,13 +2,14 @@ package com.gilt.nozzle.core.modules
 
 import java.util.regex.{Matcher, Pattern}
 import spray.http.{Uri, HttpRequest}
-import com.gilt.nozzle.core.{Role, TargetInfo}
+import com.gilt.nozzle.core.{DefaultTargetInfo, Role, TargetInfo}
 import com.gilt.nozzle.core.defaults.config
 import scala.annotation.tailrec
 import scala.collection.JavaConversions._
 import scala.concurrent.{Future, future}
 import scala.concurrent.ExecutionContext.Implicits.global
 import org.slf4j.{LoggerFactory, Logger}
+import com.gilt.nozzle.core.TargetInfo.TargetInfoExtractor
 
 case class TargetInfoMatcher(pattern: Pattern, replaces:Iterable[String], roles: Iterable[Role]) {
   def getUri(m: Matcher, text: String) = {
@@ -45,7 +46,7 @@ object RegexTargetInfo {
     }
   }
 
-  def regexExtractTargetInfo(request: HttpRequest): Future[Option[TargetInfo]] = {
+  def regexExtractTargetInfo: TargetInfoExtractor = { (request) =>
     @tailrec
     def recursiveExtractTargetInfo(request: HttpRequest, col: List[TargetInfoMatcher]): Option[TargetInfo] = col match {
       case Nil => None
@@ -53,7 +54,7 @@ object RegexTargetInfo {
         val text: String = request.uri.toString()
         val matcher = x.pattern.matcher(text)
         if( matcher.matches()) {
-          val ti = Some(TargetInfo(x.getUri(matcher, text), x.roles))
+          val ti = Some(DefaultTargetInfo(x.getUri(matcher, text), x.roles))
           log.debug("Uri resulted in {}", ti.get)
           ti
         } else

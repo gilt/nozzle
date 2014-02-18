@@ -3,9 +3,18 @@ package com.gilt.nozzle.core
 import spray.http.HttpRequest
 import scala.concurrent.Future
 
-case class DevInfo(id: String, roles: Iterable[Role], name: Option[String], email: Option[String])
+trait DevInfo {
+  val id: String
+  val roles: Iterable[Role]
+  val name: Option[String]
+  val email: Option[String]
+}
+
+case class DefaultDevInfo(val id: String, val roles: Iterable[Role], val name: Option[String], val email: Option[String])
+    extends DevInfo
 
 object DevInfo {
-  def apply(s: String): DevInfo = DevInfo(s, Seq.empty[Role], None, None)
-  type DevInfoExtractor = HttpRequest => Future[Option[DevInfo]]
+  def apply(s: String): DevInfo = DefaultDevInfo(s, Seq.empty[Role], None, None)
+  type DevInfoExtractor = HttpRequest => Future[DevInfo]
+  val Anonymous = DevInfo("anonymous")
 }

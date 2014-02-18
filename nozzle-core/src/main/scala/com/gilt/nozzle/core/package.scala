@@ -5,8 +5,8 @@ import scala.concurrent.Future
 import com.typesafe.config.ConfigFactory
 
 package object core {
-  type RequestEnricher = (HttpRequest, DevInfo, TargetInfo) => HttpRequest
-  type ResponseEnricher = (HttpRequest, HttpResponse, DevInfo, TargetInfo) => HttpResponse
+  type RequestTransformer = (HttpRequest, DevInfo, TargetInfo) => HttpRequest
+  type ResponseTransformer = (HttpRequest, HttpResponse, DevInfo, TargetInfo) => HttpResponse
   type ValidationFailureHandler = (Throwable, HttpRequest, DevInfo, TargetInfo) => HttpResponse
   type ForwardRequest = (HttpRequest) => Future[HttpResponse]
   type DevKeyExtractor = (HttpRequest) => Option[DevKey]
@@ -14,6 +14,6 @@ package object core {
   type DevKey = String
 
   object defaults {
-    lazy val config = ConfigFactory.load(Thread.currentThread().getContextClassLoader).getConfig("nozzle")
+    lazy val config = ConfigFactory.load.getConfig("nozzle")
   }
 }
