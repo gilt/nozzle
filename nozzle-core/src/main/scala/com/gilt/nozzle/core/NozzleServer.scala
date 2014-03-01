@@ -20,6 +20,7 @@ import akka.event.Logging.LogLevel
 import java.util.concurrent.TimeUnit
 
 trait NozzleServer extends App {
+
   import defaults.config
   import DefaultHandlers._
 
@@ -28,23 +29,29 @@ trait NozzleServer extends App {
   implicit val system = ActorSystem()
 
   def extractDevInfo: DevInfoExtractor
+
   def extractTargetInfo: TargetInfoExtractor
+
   def policyValidator: ValidatePolicy
+
   def enrichRequest: RequestTransformer = noopRequestEnricher(system.log)
+
   def enrichResponse: ResponseTransformer = noopResponseEnricher(system.log)
+
   def errorHandler: ValidationFailureHandler = defaultErrorHandler
+
   def forwardRequest: ForwardRequest = sendReceive
 
   val props = Props(classOf[RequestReceiver], extractDevInfo, extractTargetInfo, policyValidator, enrichRequest,
-                      enrichResponse, errorHandler, forwardRequest)
+    enrichResponse, errorHandler, forwardRequest)
 
   val httpServer = system.actorOf(props, "nozzle-server")
   // create a new HttpServer using our handler and tell it where to bind to
   IO(Http) ! Http.Bind(
-                httpServer,
-                interface = config.getString("service.interface"),
-                port = config.getInt("service.port")
-             )
+    httpServer,
+    interface = config.getString("service.interface"),
+    port = config.getInt("service.port")
+  )
 }
 
 object DefaultHandlers {
@@ -63,115 +70,55 @@ object DefaultHandlers {
 }
 
 class RequestReceiver(
-             devInfoExtractor: DevInfoExtractor,
-             extractTargetInfo: TargetInfoExtractor,
-             policyValidator: ValidatePolicy,
-             enrichRequest: RequestTransformer,
-             enrichResponse: ResponseTransformer,
-             errorHandler: ValidationFailureHandler,
-             forwardRequest: ForwardRequest
-  ) extends Actor with ActorLogging {
+                       devInfoExtractor: DevInfoExtractor,
+                       extractTargetInfo: TargetInfoExtractor,
+                       validatePolicy: ValidatePolicy,
+                       enrichRequest: RequestTransformer,
+                       enrichResponse: ResponseTransformer,
+                       errorHandler: ValidationFailureHandler,
+                       forwardRequest: ForwardRequest
+                       ) extends Actor with ActorLogging {
 
   def receive = {
     // when a new connection comes in we register ourselves as the connection handler
     case _: Http.Connected => sender ! Http.Register(self)
 
     case request: HttpRequest => {
-      val validatorActor = context.actorOf(Props(
-              classOf[PolicyValidatorActor], request, policyValidator, errorHandler,
-                enrichRequest, enrichResponse, forwardRequest, sender))
+      val replyTo = sender
 
       // Process getting developer and target info from the request in parallel
-      // and process them in the validatorActor
-      devInfoExtractor(request) pipeTo validatorActor
-      extractTargetInfo(request) pipeTo validatorActor
+      // and process them
+      val futureInfoExtractor = devInfoExtractor(request)
+      val futureTargetInfo = extractTargetInfo(request)
+
+      val f = for {
+        di <- futureInfoExtractor
+        ti <- futureTargetInfo
+      } yield (di, ti)
+
+      f map handleInfos(request, replyTo) recover {
+        case t: Exception =>
+          replyTo ! errorHandler(t, request, None, None)
+      }
     }
     case a =>
       log.warning(a.toString)
   }
-}
 
-/**
- * Process asynchronous responses from the DevInfo and TargetInfo extractors, so that
- * when both have been received it will send back the validation message
- * @param request
- * @param validatePolicy
- * @param errorHandler
- * @param replyTo
- */
-class PolicyValidatorActor(
-                            request: HttpRequest,
-                            validatePolicy: ValidatePolicy,
-                            errorHandler: ValidationFailureHandler,
-                            enrichRequest: RequestTransformer,
-                            enrichResponse: ResponseTransformer,
-                            forwardRequest: ForwardRequest,
-                            replyTo: ActorRef
-                           ) extends Actor with ActorLogging {
+  private[this] def handleInfos(request: HttpRequest, replyTo: ActorRef): ((DevInfo, Option[TargetInfo])) => Unit = {
 
-  var devInfo: Option[DevInfo] = None
-  var targetInfo: Option[TargetInfo] = None
-
-  //Shutdown after 10 seconds
-  context.system.scheduler.scheduleOnce(10 seconds) { self ! PoisonPill }
-
-  def receive = {
-    case d: DevInfo =>
-      processMessageArrival(d)
-    case t: TargetInfo =>
-      processMessageArrival(t)
-    case Some(a) =>
-      processMessageArrival(a)
-    case None =>
-      replyTo ! HttpResponse(404)
-    case any =>
-      //This should never happen
-      log.warning(s"Unknown message ${any}")
-      replyTo ! HttpResponse(500)
-
-  }
-
-  private def processMessageArrival(a: Any) = {
-    a match {
-      case t: TargetInfo => targetInfo = Some(t)
-      case d: DevInfo => devInfo = Some(d)
-      case o =>
-        log.warning("Unable to process message {}", o)
-        replyTo ! HttpResponse(500)
-    }
-    if( targetInfo.isDefined && devInfo.isDefined) {
-      validatePolicy(request, devInfo.get, targetInfo.get) match {
+    case (devInfo, Some(targetInfo)) =>
+      validatePolicy(request, devInfo, targetInfo) match {
         case Success(_) =>
-          val receiverProps = Props(classOf[ValidationReceiverActor],
-                                enrichRequest, enrichResponse, forwardRequest, errorHandler)
-          val receiver = context.actorOf(receiverProps)
-          receiver ! ValidationMessage(request, devInfo.get, targetInfo.get, replyTo)
+          forwardRequest(enrichRequest(request, devInfo, targetInfo)).collect {
+            case response => replyTo ! enrichResponse(request, response, devInfo, targetInfo)
+          }.recover {
+            case e: Exception => replyTo ! errorHandler(e, request, Some(devInfo), Some(targetInfo))
+          }
         case Failure(e) =>
-          replyTo ! errorHandler(e, request, devInfo.get, targetInfo.get)
+          replyTo ! errorHandler(e, request, Some(devInfo), Some(targetInfo))
       }
-    }
+    case (_, None) => replyTo ! HttpResponse(404)
+
   }
 }
-
-class ValidationReceiverActor(
-                               enrichRequest: RequestTransformer,
-                               enrichResponse: ResponseTransformer,
-                               forwardRequest: ForwardRequest,
-                               errorHandler: ValidationFailureHandler
-                               ) extends Actor with ActorLogging {
-  def receive = {
-    case ValidationMessage(request, devInfo, targetInfo, replyTo) => try {
-      self ! PoisonPill
-      forwardRequest(enrichRequest(request, devInfo, targetInfo)).onComplete {
-        case Success(response) =>
-          replyTo ! enrichResponse(request, response, devInfo, targetInfo)
-        case Failure(e) =>
-          replyTo ! errorHandler(e, request, devInfo, targetInfo)
-      }
-    } catch {
-      case e: Exception => log.warning(e.getLocalizedMessage)
-        replyTo ! HttpResponse(500)
-    }
-  }
-}
-
