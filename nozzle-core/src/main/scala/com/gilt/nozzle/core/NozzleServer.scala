@@ -3,7 +3,6 @@ package com.gilt.nozzle.core
 
 import akka.actor._
 import akka.util.Timeout
-import akka.pattern.pipe
 import scala.concurrent.duration._
 import spray.can.Http
 import akka.io.IO
@@ -11,13 +10,10 @@ import spray.http.{HttpResponse, HttpRequest}
 import spray.client.pipelining.sendReceive
 import com.gilt.nozzle.core.DevInfo.DevInfoExtractor
 import com.gilt.nozzle.core.TargetInfo.TargetInfoExtractor
-import scala.util.{Failure, Success}
 import scala.concurrent.ExecutionContext.Implicits.global
 import PolicyValidator._
 import akka.event.LoggingAdapter
-import spray.http.Uri.Path
-import akka.event.Logging.LogLevel
-import java.util.concurrent.TimeUnit
+import scala.concurrent.Future
 
 trait NozzleServer extends App {
 
@@ -91,34 +87,33 @@ class RequestReceiver(
       val futureInfoExtractor = devInfoExtractor(request)
       val futureTargetInfo = extractTargetInfo(request)
 
-      val f = for {
+      val futureResponse = for {
         di <- futureInfoExtractor
         ti <- futureTargetInfo
-      } yield (di, ti)
+        response <- handleInfos(request)((di, ti))
+      } yield response
 
-      f map handleInfos(request, replyTo) recover {
-        case t: Exception =>
-          replyTo ! errorHandler(t, request, None, None)
-      }
+      futureResponse recover {
+        case t: Exception => errorHandler(t, request, None, None)
+      } onSuccess { case r => replyTo ! r }
+
     }
-    case a =>
-      log.warning(a.toString)
+
+    case a => log.warning(a.toString)
   }
 
-  private[this] def handleInfos(request: HttpRequest, replyTo: ActorRef): ((DevInfo, Option[TargetInfo])) => Unit = {
+  private[this] def handleInfos(request: HttpRequest): ((DevInfo, Option[TargetInfo])) => Future[HttpResponse] = {
 
-    case (devInfo, Some(targetInfo)) =>
-      validatePolicy(request, devInfo, targetInfo) match {
-        case Success(_) =>
-          forwardRequest(enrichRequest(request, devInfo, targetInfo)).collect {
-            case response => replyTo ! enrichResponse(request, response, devInfo, targetInfo)
-          }.recover {
-            case e: Exception => replyTo ! errorHandler(e, request, Some(devInfo), Some(targetInfo))
-          }
-        case Failure(e) =>
-          replyTo ! errorHandler(e, request, Some(devInfo), Some(targetInfo))
-      }
-    case (_, None) => replyTo ! HttpResponse(404)
+    case (devInfo, Some(targetInfo)) => handleForwardRequest(request, devInfo, targetInfo)
+    case (_, None) => throw new NotFoundException(s"Rule not found to handle request for: ${request.uri}")
 
+  }
+
+  private[this] def handleForwardRequest(request: HttpRequest, devInfo: DevInfo, targetInfo: TargetInfo): Future[HttpResponse] = {
+    forwardRequest(enrichRequest(request, devInfo, targetInfo)) map {
+      response => enrichResponse(request, response, devInfo, targetInfo)
+    } recover {
+      case e: Exception => errorHandler(e, request, Some(devInfo), Some(targetInfo))
+    }
   }
 }
