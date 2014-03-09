@@ -6,7 +6,7 @@ import akka.util.Timeout
 import scala.concurrent.duration._
 import spray.can.Http
 import akka.io.IO
-import spray.http.{HttpResponse, HttpRequest}
+import spray.http.{HttpHeader, HttpResponse, HttpRequest}
 import spray.client.pipelining.sendReceive
 import com.gilt.nozzle.core.DevInfo.DevInfoExtractor
 import com.gilt.nozzle.core.TargetInfo.TargetInfoExtractor
@@ -14,6 +14,8 @@ import scala.concurrent.ExecutionContext.Implicits.global
 import PolicyValidator._
 import akka.event.LoggingAdapter
 import scala.concurrent.Future
+import java.net.InetAddress
+import spray.http.HttpHeaders.RawHeader
 
 trait NozzleServer extends App {
 
@@ -75,9 +77,13 @@ class RequestReceiver(
                        forwardRequest: ForwardRequest
                        ) extends Actor with ActorLogging {
 
+  var origIp: Option[InetAddress] = None
+
   def receive = {
     // when a new connection comes in we register ourselves as the connection handler
-    case _: Http.Connected => sender ! Http.Register(self)
+    case c: Http.Connected =>
+      origIp = Some(c.remoteAddress.getAddress)
+      sender ! Http.Register(self)
 
     case request: HttpRequest => {
       val replyTo = sender
@@ -110,10 +116,28 @@ class RequestReceiver(
   }
 
   private[this] def handleForwardRequest(request: HttpRequest, devInfo: DevInfo, targetInfo: TargetInfo): Future[HttpResponse] = {
-    forwardRequest(enrichRequest(request, devInfo, targetInfo)) map {
+    forwardRequest(addForwardedFromHeader(enrichRequest(request, devInfo, targetInfo))) map {
       response => enrichResponse(request, response, devInfo, targetInfo)
     } recover {
       case e: Exception => errorHandler(e, request, Some(devInfo), Some(targetInfo))
     }
+  }
+
+  protected[core] def addForwardedFromHeader(orig: HttpRequest) = {
+    origIp.map(_.getHostAddress).map{ ip =>
+      val xForwFor = "X-Forwarded-For"
+      val xForwForLower = xForwFor.toLowerCase
+
+      def xffFilter(h: HttpHeader) = h.lowercaseName == xForwForLower
+
+      val restHeaders = orig.headers.filterNot(xffFilter)
+
+      val xffHeaders = orig.headers.filter(xffFilter) match {
+          case Nil => List(RawHeader(xForwFor, ip))
+          case x :: Nil => List(RawHeader(x.name, s"${x.value}, ${ip}"))
+          case xs => xs :+ RawHeader(xForwFor, ip)
+      }
+      orig.copy(headers = restHeaders ::: xffHeaders)
+    }.getOrElse(orig)
   }
 }
