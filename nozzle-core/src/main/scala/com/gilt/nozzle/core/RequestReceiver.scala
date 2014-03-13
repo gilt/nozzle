@@ -3,11 +3,12 @@ package com.gilt.nozzle.core
 import com.gilt.nozzle.core.DevInfo._
 import com.gilt.nozzle.core.TargetInfo._
 import com.gilt.nozzle.core.PolicyValidator._
-import akka.actor.{ActorLogging, Actor}
+import akka.actor.{PoisonPill, ActorLogging, Actor}
 import java.net.InetAddress
 import spray.http.{HttpHeader, HttpResponse, HttpRequest}
 import scala.concurrent.Future
 import spray.http.HttpHeaders.RawHeader
+import spray.can.Http.ConnectionClosed
 
 
 class RequestReceiver(
@@ -43,6 +44,7 @@ class RequestReceiver(
         case t: Exception => errorHandler(t, request, None, None)
       } onSuccess { case r => replyTo ! r }
 
+    case _: ConnectionClosed => self ! PoisonPill
     case a => log.warning(a.toString)
   }
 
