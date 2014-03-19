@@ -10,6 +10,9 @@ import scala.concurrent.Future
 import spray.http.HttpHeaders.RawHeader
 import spray.can.Http.ConnectionClosed
 
+import java.util.Date
+import akka.event.Logging
+
 
 class RequestReceiver(
                        devInfoExtractor: DevInfoExtractor,
@@ -23,6 +26,7 @@ class RequestReceiver(
                        ) extends Actor with ActorLogging {
 
   implicit lazy val ec = context.dispatcher
+  val accessLog = Logging(context.system,"AccessLog")
 
   def receive = {
 
@@ -42,10 +46,11 @@ class RequestReceiver(
 
       futureResponse recover {
         case t: Exception => errorHandler(t, request, None, None)
-      } onSuccess { case r => replyTo ! r }
+      } onSuccess { case r =>
+        accessLog.info("{} {} {} {}", new Date(), ipAddress.getHostAddress, s""""${request.method} ${request.uri.path}"""", r.status.intValue)
+        replyTo ! r }
 
     case _: ConnectionClosed => self ! PoisonPill
-    case a => log.warning(a.toString)
   }
 
   private[this] def handleInfos(request: HttpRequest): ((DevInfo, Option[TargetInfo])) => Future[HttpResponse] = {
