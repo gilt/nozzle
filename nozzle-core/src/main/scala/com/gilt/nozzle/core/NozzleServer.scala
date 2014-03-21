@@ -3,23 +3,24 @@ package com.gilt.nozzle.core
 
 import akka.actor._
 import akka.util.Timeout
-import scala.concurrent.duration._
-import spray.can.Http
+import akka.event.LoggingAdapter
 import akka.io.IO
+import spray.can.Http
 import spray.http.{HttpResponse, HttpRequest}
 import spray.client.pipelining.sendReceive
+import scala.concurrent.duration._
+import scala.language.postfixOps
 import com.gilt.nozzle.core.DevInfo.DevInfoExtractor
 import com.gilt.nozzle.core.TargetInfo.TargetInfoExtractor
 import scala.concurrent.ExecutionContext.Implicits.global
 import PolicyValidator._
-import akka.event.LoggingAdapter
 
 trait NozzleServer extends App {
 
   import defaults.config
   import DefaultHandlers._
 
-  implicit val timeout: Timeout = 5 seconds
+  implicit val timeout: Timeout = 5.seconds
 
   implicit val system = ActorSystem()
 
@@ -53,7 +54,10 @@ object DefaultHandlers {
 
   def noopRequestEnricher(log: LoggingAdapter)(request: HttpRequest, devInfo: DevInfo, targetInfo: TargetInfo) = {
     //Get the Uri from targetInfo and remove the host header from the request
-    val forwarded = request.copy(uri = targetInfo.uri, headers = request.headers.filter(_.isNot("host")))
+    val forwarded = request.copy(uri = targetInfo.uri.copy(
+          query = request.uri.query, fragment = request.uri.fragment),
+          headers = request.headers.filter(_.isNot("host"))
+    )
     log.debug("Forwarding request {} to downstream server", forwarded.toString)
     forwarded
   }
