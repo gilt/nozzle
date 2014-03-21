@@ -20,7 +20,7 @@ trait NozzleServer extends App {
   import defaults.config
   import DefaultHandlers._
 
-  implicit val timeout: Timeout = 5.seconds
+  implicit def timeout: Timeout = 5.seconds
 
   implicit val system = ActorSystem()
 
