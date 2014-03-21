@@ -5,13 +5,15 @@ import com.gilt.nozzle.core.TargetInfo._
 import com.gilt.nozzle.core.PolicyValidator._
 import akka.actor.{PoisonPill, ActorLogging, Actor}
 import java.net.InetAddress
-import spray.http.{HttpHeader, HttpResponse, HttpRequest}
-import scala.concurrent.Future
-import spray.http.HttpHeaders.RawHeader
+import spray.http._
 import spray.can.Http.ConnectionClosed
-
 import java.util.Date
 import akka.event.Logging
+import spray.http.HttpRequest
+import spray.http.HttpHeaders.RawHeader
+import scala.Some
+import spray.http.HttpResponse
+import scala.concurrent.Future
 
 
 class RequestReceiver(
@@ -46,21 +48,25 @@ class RequestReceiver(
 
       futureResponse recover {
         case t: Exception => errorHandler(t, request, None, None)
-      } onSuccess { case r =>
-        accessLog.info("{} {} {} {}", new Date(), ipAddress.getHostAddress, s""""${request.method} ${request.uri.path}"""", r.status.intValue)
-        replyTo ! r }
+      } onSuccess {
+        case r: HttpResponse =>
+          accessLog.info("{} {} {} {}", new Date(), ipAddress.getHostAddress, s""""${request.method} ${request.uri.path}"""", r.status.intValue)
+          replyTo ! r
+        case r: HttpResponsePart =>
+          replyTo ! r
+      }
 
     case _: ConnectionClosed => self ! PoisonPill
   }
 
-  private[this] def handleInfos(request: HttpRequest): ((DevInfo, Option[TargetInfo])) => Future[HttpResponse] = {
+  private[this] def handleInfos(request: HttpRequest): ((DevInfo, Option[TargetInfo])) => Future[HttpResponsePart] = {
 
     case (devInfo, Some(targetInfo)) => handleForwardRequest(request, devInfo, targetInfo)
     case (_, None) => throw new NotFoundException(s"Rule not found to handle request for: ${request.uri}")
 
   }
 
-  private[this] def handleForwardRequest(request: HttpRequest, devInfo: DevInfo, targetInfo: TargetInfo): Future[HttpResponse] = {
+  private[this] def handleForwardRequest(request: HttpRequest, devInfo: DevInfo, targetInfo: TargetInfo): Future[HttpResponsePart] = {
     forwardRequest(addForwardedFromHeader(enrichRequest(request, devInfo, targetInfo))) map {
       response => enrichResponse(request, response, devInfo, targetInfo)
     } recover {

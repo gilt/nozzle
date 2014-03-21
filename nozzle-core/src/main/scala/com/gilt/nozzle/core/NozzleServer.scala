@@ -6,7 +6,7 @@ import akka.util.Timeout
 import akka.event.LoggingAdapter
 import akka.io.IO
 import spray.can.Http
-import spray.http.{HttpResponse, HttpRequest}
+import spray.http.{HttpResponsePart, HttpResponse, HttpRequest}
 import spray.client.pipelining.sendReceive
 import scala.concurrent.duration._
 import scala.language.postfixOps
@@ -62,7 +62,7 @@ object DefaultHandlers {
     forwarded
   }
 
-  def noopResponseEnricher(log: LoggingAdapter)(request: HttpRequest, response: HttpResponse, devInfo: DevInfo, targetInfo: TargetInfo) = {
+  def noopResponseEnricher(log: LoggingAdapter)(request: HttpRequest, response: HttpResponsePart, devInfo: DevInfo, targetInfo: TargetInfo) = {
     log.debug("Response received from downstream server: {}", response)
     response
   }

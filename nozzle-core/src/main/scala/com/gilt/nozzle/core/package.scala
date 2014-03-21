@@ -6,7 +6,7 @@ import com.typesafe.config.ConfigFactory
 
 package object core {
   type RequestTransformer = (HttpRequest, DevInfo, TargetInfo) => HttpRequest
-  type ResponseTransformer = (HttpRequest, HttpResponse, DevInfo, TargetInfo) => HttpResponse
+  type ResponseTransformer = (HttpRequest, HttpResponsePart, DevInfo, TargetInfo) => HttpResponsePart
   type ValidationFailureHandler = (Throwable, HttpRequest, Option[DevInfo], Option[TargetInfo]) => HttpResponse
   type ForwardRequest = (HttpRequest) => Future[HttpResponsePart]
   type DevKeyExtractor = (HttpRequest) => Option[DevKey]
