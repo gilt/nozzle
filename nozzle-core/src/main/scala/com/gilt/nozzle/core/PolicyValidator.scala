@@ -17,6 +17,7 @@ object PolicyValidator {
       case e: AccessForbiddenException => HttpResponse(403)
       case e: NotFoundException => HttpResponse(404)
       case e: ConnectionException => HttpResponse(502)
+      case e: DownstreamErrorException => HttpResponse(502)
       case _ =>
         log.error("Unexpected exception occurred when processing the request", e)
         HttpResponse(500)
