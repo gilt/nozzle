@@ -3,7 +3,7 @@ package com.gilt.nozzle.core
 import com.gilt.nozzle.core.DevInfo._
 import com.gilt.nozzle.core.TargetInfo._
 import com.gilt.nozzle.core.PolicyValidator._
-import akka.actor.{PoisonPill, ActorLogging, Actor}
+import akka.actor._
 import java.net.InetAddress
 import spray.http._
 import spray.can.Http.ConnectionClosed
@@ -13,8 +13,10 @@ import spray.http.HttpRequest
 import spray.http.HttpHeaders.RawHeader
 import scala.Some
 import spray.http.HttpResponse
-import scala.concurrent.Future
-
+import spray.client.pipelining.sendTo
+import spray.can.Http
+import akka.io.IO
+import scala.util.Try
 
 class RequestReceiver(
                        devInfoExtractor: DevInfoExtractor,
@@ -23,12 +25,12 @@ class RequestReceiver(
                        enrichRequest: RequestTransformer,
                        enrichResponse: ResponseTransformer,
                        errorHandler: ValidationFailureHandler,
-                       forwardRequest: ForwardRequest,
                        ipAddress: InetAddress
                        ) extends Actor with ActorLogging {
 
   implicit lazy val ec = context.dispatcher
   val accessLog = Logging(context.system,"AccessLog")
+  val io = IO(Http)(context.system)
 
   def receive = {
 
@@ -40,38 +42,47 @@ class RequestReceiver(
       val futureInfoExtractor = devInfoExtractor(request)
       val futureTargetInfo = extractTargetInfo(request)
 
-      val futureResponse = for {
+      val infos = for {
         di <- futureInfoExtractor
         ti <- futureTargetInfo
-        response <- handleInfos(request)((di, ti))
-      } yield response
+      } yield ((di, ti))
 
-      futureResponse recover {
-        case t: Exception => errorHandler(t, request, None, None)
-      } onSuccess {
-        case r: HttpResponse =>
-          accessLog.info("{} {} {} {}", new Date(), ipAddress.getHostAddress, s""""${request.method} ${request.uri.path}"""", r.status.intValue)
-          replyTo ! r
-        case r: HttpResponsePart =>
-          replyTo ! r
+      infos  map { case (d,t) =>
+        handleInfos(request, replyTo)((d,t))
+      } recover {
+        case t: Exception => replyTo ! errorHandler(t, request, None, None)
       }
+
+    //      futureResponse recover {
+//        case t: Exception => errorHandler(t, request, None, None)
+//      } onSuccess {
+//        case r: HttpResponse =>
+//          accessLog.info("{} {} {} {}", new Date(), ipAddress.getHostAddress, s""""${request.method} ${request.uri.path}"""", r.status.intValue)
+//          replyTo ! r
+//        case r: HttpResponsePart =>
+//          replyTo ! r
+//      }
 
     case _: ConnectionClosed => self ! PoisonPill
   }
 
-  private[this] def handleInfos(request: HttpRequest): ((DevInfo, Option[TargetInfo])) => Future[HttpResponsePart] = {
+  private[this] def handleInfos(request: HttpRequest, replyTo: ActorRef): ((DevInfo, Option[TargetInfo])) => Unit = {
 
-    case (devInfo, Some(targetInfo)) => handleForwardRequest(request, devInfo, targetInfo)
+    case (devInfo, Some(targetInfo)) => handleForwardRequest(replyTo,request, devInfo, targetInfo)
     case (_, None) => throw new NotFoundException(s"Rule not found to handle request for: ${request.uri}")
 
   }
 
-  private[this] def handleForwardRequest(request: HttpRequest, devInfo: DevInfo, targetInfo: TargetInfo): Future[HttpResponsePart] = {
-    forwardRequest(addForwardedFromHeader(enrichRequest(request, devInfo, targetInfo))) map {
-      response => enrichResponse(request, response, devInfo, targetInfo)
-    } recover {
-      case e: Exception => errorHandler(e, request, Some(devInfo), Some(targetInfo))
-    }
+  private[this] def handleForwardRequest(replyTo: ActorRef, request: HttpRequest, devInfo: DevInfo, targetInfo: TargetInfo) = {
+    val enrichedRequest = enrichRequest(request, devInfo, targetInfo)
+    val forwarder = context.actorOf(Props(classOf[RequestForwarder], replyTo, enrichedRequest, devInfo, targetInfo, enrichResponse))
+    implicit val system = context.system
+    io.tell(enrichedRequest,forwarder)
+//    forwardRequest(addForwardedFromHeader(enrichRequest(request, devInfo, targetInfo))) map {
+//      response => enrichResponse(request, response, devInfo, targetInfo)
+//    } recover {
+//      case e: Exception => errorHandler(e, request, Some(devInfo), Some(targetInfo))
+//    }
   }
 
   protected[core] def addForwardedFromHeader(orig: HttpRequest) = {
@@ -89,5 +100,14 @@ class RequestReceiver(
       case xs => xs :+ RawHeader(xForwFor, ip)
     }
     orig.copy(headers = restHeaders ::: xffHeaders)
+  }
+}
+
+class RequestForwarder(replyTo: ActorRef, request: HttpRequest, devInfo: DevInfo, targetInfo: TargetInfo,
+                       responseTransformer: ResponseTransformer) extends Actor with ActorLogging {
+  def receive = {
+    case part: HttpResponsePart =>
+      replyTo ! responseTransformer(request, part, devInfo, targetInfo)
+    case _ => log.warning(s"Unexpected ")
   }
 }

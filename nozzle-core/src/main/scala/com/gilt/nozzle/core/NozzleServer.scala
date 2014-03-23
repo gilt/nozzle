@@ -6,13 +6,11 @@ import akka.util.Timeout
 import akka.event.LoggingAdapter
 import akka.io.IO
 import spray.can.Http
-import spray.http.{HttpResponsePart, HttpResponse, HttpRequest}
-import spray.client.pipelining.sendReceive
+import spray.http.{HttpResponsePart, HttpRequest}
 import scala.concurrent.duration._
 import scala.language.postfixOps
 import com.gilt.nozzle.core.DevInfo.DevInfoExtractor
 import com.gilt.nozzle.core.TargetInfo.TargetInfoExtractor
-import scala.concurrent.ExecutionContext.Implicits.global
 import PolicyValidator._
 
 trait NozzleServer extends App {
@@ -36,10 +34,8 @@ trait NozzleServer extends App {
 
   def errorHandler: ValidationFailureHandler = defaultErrorHandler
 
-  def forwardRequest: ForwardRequest = sendReceive
-
   val props = Props(classOf[ConnectionHandler], extractDevInfo, extractTargetInfo, policyValidator, enrichRequest,
-    enrichResponse, errorHandler, forwardRequest)
+    enrichResponse, errorHandler)
 
   val httpServer = system.actorOf(props, "nozzle-server")
   // create a new HttpServer using our handler and tell it where to bind to
@@ -74,8 +70,7 @@ class ConnectionHandler(
                          validatePolicy: ValidatePolicy,
                          enrichRequest: RequestTransformer,
                          enrichResponse: ResponseTransformer,
-                         errorHandler: ValidationFailureHandler,
-                         forwardRequest: ForwardRequest
+                         errorHandler: ValidationFailureHandler
                          ) extends Actor with ActorLogging {
   def receive = {
     // when a new connection comes in we register ourselves as the connection handler
@@ -83,7 +78,7 @@ class ConnectionHandler(
       val ipAddress = c.remoteAddress.getAddress
       val requestHandler = context.actorOf(Props(classOf[RequestReceiver], devInfoExtractor,
         extractTargetInfo, validatePolicy, enrichRequest,
-        enrichResponse, errorHandler, forwardRequest, ipAddress))
+        enrichResponse, errorHandler, ipAddress))
       sender ! Http.Register(requestHandler)
   }
 }
