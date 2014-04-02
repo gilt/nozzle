@@ -10,7 +10,7 @@ object DefaultDevKeyExtractors {
   }
 
   def queryParamDevKeyExtractors: DevKeyExtractor = { request =>
-    request.uri. query.get(paramName)
+    request.uri.query.get(paramName)
   }
 
 }

@@ -23,7 +23,7 @@ object Build extends Build {
     .settings(nozzleSettings: _*)
     .settings(libraryDependencies ++=
       compile(akkaActor, sprayCan, sprayRouting, sprayClient, akkaSlf4j, logback) ++
-      test(specs2)
+      test(scalatest)
     )
 
 

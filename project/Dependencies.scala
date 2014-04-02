@@ -31,7 +31,7 @@ object Dependencies {
   val logging       = "com.typesafe"                            %% "scalalogging-slf4j"           % "1.0.1"
   val parboiled     = "org.parboiled"                           %%  "parboiled-scala"             % "1.1.4"
   val shapeless     = "com.chuusai"                             %%  "shapeless"                   % "1.2.3"
-  val scalatest     = "org.scalatest"                           %%  "scalatest"                   % "1.9.1"
+  val scalatest     = "org.scalatest"                           %%  "scalatest"                   % "2.1.0"
   val specs2        = "org.specs2"                              %%  "specs2"                      % "1.12.3"
   val sprayJson     = "io.spray"                                %%  "spray-json"                  % "1.2.3"
   val twirlApi      = "io.spray"                                %%  "twirl-api"                   % "0.6.1"
