@@ -7,16 +7,12 @@ import akka.actor._
 import java.net.InetAddress
 import spray.http._
 import spray.can.Http.ConnectionClosed
-import java.util.Date
 import akka.event.Logging
 import spray.http.HttpRequest
 import spray.http.HttpHeaders.RawHeader
 import scala.Some
-import spray.http.HttpResponse
-import spray.client.pipelining.sendTo
 import spray.can.Http
 import akka.io.IO
-import scala.util.Try
 
 class RequestReceiver(
                        devInfoExtractor: DevInfoExtractor,

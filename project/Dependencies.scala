@@ -2,8 +2,8 @@ import sbt._
 
 object Dependencies {
 
-  val sprayVersion = "1.2.0"
-  val akkaVersion = "2.2.3"
+  val sprayVersion = "1.2.1"
+  val akkaVersion = "2.2.4"
   
   val resolutionRepos = Seq(
     "spray repo" at "http://repo.spray.io/",

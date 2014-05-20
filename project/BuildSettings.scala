@@ -9,12 +9,12 @@ object BuildSettings {
   lazy val basicSettings = Seq(
     version               := VERSION + new SimpleDateFormat("-yyyyMMdd").format(new Date),
     homepage              := Some(new URL("http://dev.gilt.com")),
-    organization          := "com.giltgroupe",
+    organization          := "com.gilt",
     organizationHomepage  := Some(new URL("http://www.gilt.com")),
     description           := "API gateway to publish your services to developers",
     startYear             := Some(2014),
     licenses              := Seq("Apache 2" -> new URL("http://www.apache.org/licenses/LICENSE-2.0.txt")),
-    scalaVersion          := "2.10.3",
+    scalaVersion          := "2.10.4",
     resolvers             ++= Dependencies.resolutionRepos,
     scalacOptions         := Seq(
       "-encoding", "utf8",
