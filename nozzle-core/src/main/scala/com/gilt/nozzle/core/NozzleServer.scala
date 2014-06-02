@@ -6,12 +6,15 @@ import akka.util.Timeout
 import akka.event.LoggingAdapter
 import akka.io.IO
 import spray.can.Http
-import spray.http.{HttpResponsePart, HttpRequest}
+import spray.http._
 import scala.concurrent.duration._
 import scala.language.postfixOps
 import com.gilt.nozzle.core.DevInfo.DevInfoExtractor
 import com.gilt.nozzle.core.TargetInfo.TargetInfoExtractor
 import PolicyValidator._
+import spray.http.HttpRequest
+import spray.http.ChunkedResponseStart
+import spray.http.HttpResponse
 
 trait NozzleServer extends App {
 
@@ -48,19 +51,30 @@ trait NozzleServer extends App {
 
 object DefaultHandlers {
 
+  val removedRequestHeaders = Set("host")
+  val removedResponseHeaders = Set("Transfer-Encoding".toLowerCase, "Date".toLowerCase, "Server".toLowerCase, "Content-Length".toLowerCase)
+
   def noopRequestEnricher(log: LoggingAdapter)(request: HttpRequest, devInfo: DevInfo, targetInfo: TargetInfo) = {
     //Get the Uri from targetInfo and remove the host header from the request
     val forwarded = request.copy(uri = targetInfo.uri.copy(
           query = request.uri.query, fragment = request.uri.fragment),
-          headers = request.headers.filter(_.isNot("host"))
+          headers = request.headers.filterNot( h => removedRequestHeaders.contains(h.lowercaseName) )
     )
     log.debug("Forwarding request {} to downstream server", forwarded.toString)
     forwarded
   }
 
   def noopResponseEnricher(log: LoggingAdapter)(request: HttpRequest, response: HttpResponsePart, devInfo: DevInfo, targetInfo: TargetInfo) = {
-    log.debug("Response received from downstream server: {}", response)
-    response
+    def removeSpraySetHeaders(headers: List[HttpHeader]): List[HttpHeader] = {
+      headers filterNot(h => removedResponseHeaders.contains(h.lowercaseName) )
+    }
+    val forwardedResponse = response match {
+      case r: HttpResponse => r.copy(headers = removeSpraySetHeaders(r.headers))
+      case r: ChunkedResponseStart => ChunkedResponseStart(r.response.copy(headers = removeSpraySetHeaders(r.response.headers)))
+      case r => r
+    }
+    log.debug("Response received from downstream server: {}", forwardedResponse)
+    forwardedResponse
   }
 }
 
